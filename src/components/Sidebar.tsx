@@ -9,6 +9,7 @@ import { UniformNodes } from "../nodes/UniformNodes";
 import { VaryingNode } from "three/webgpu";
 import { UtilityNodes } from "../nodes/UtilityNodes";
 import { LogicNodes } from "../nodes/LogicNodes";
+import { EditorEventEmitter } from "../nodes/utils";
 
 export const Sidebar = ({setCustomNodeForm}: {setCustomNodeForm:  React.Dispatch<React.SetStateAction<boolean>>}) => {
     const pane = useRef<Pane>(null!);
@@ -154,6 +155,14 @@ export const Sidebar = ({setCustomNodeForm}: {setCustomNodeForm:  React.Dispatch
   
       const CustomNodesFolder = pane.current.addFolder({
         title: "Custom",
+      });
+  
+      const importBtn = CustomNodesFolder.addButton({
+        title: "Import GLSL Shader",
+      });
+  
+      importBtn.on("click", () => {
+        EditorEventEmitter.emit("openGLSLImport");
       });
   
       const btn = CustomNodesFolder.addButton({

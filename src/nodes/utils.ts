@@ -148,13 +148,15 @@ class EventEmitter<T extends EventMap> {
 
 export type SAVE_STATE_TYPE ="UNSAVED CHANGES" | "SAVING" | "SAVED"
 
-// Example usage:
 interface EditorEvents {
   changed: void;
-  saveStateChanged : {state: SAVE_STATE_TYPE}
-  selectionChanged: {nodes : Node[] | null}
-  updateConnectionUI : {connections: Connection<any>[]}
-  forceRender: void
+  saveStateChanged: { state: SAVE_STATE_TYPE };
+  selectionChanged: { nodes: Node[] | null };
+  updateConnectionUI: { connections: Connection<any>[] };
+  forceRender: void;
+  backendChanged: { backend: "GLSL" | "TSL" };
+  shaderCompiled: any;
+  openGLSLImport: void;
 }
 
 export const EditorEventEmitter = new EventEmitter<EditorEvents>();

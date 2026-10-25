@@ -11,7 +11,8 @@ export const canvasContentStyles = (size: { width: number; height: number }) => 
     position: relative;
     width: ${size.width}px;
     height: ${size.height}px;
-    background-image: radial-gradient(#434437 5%, #1c1e2a 5%);
+    background-color: #0b0d14;
+    background-image: radial-gradient(rgba(255, 255, 255, 0.12) 1.2px, transparent 1.2px);
     background-position: 0 0;
-    background-size: 30px 30px;
+    background-size: 24px 24px;
 `;

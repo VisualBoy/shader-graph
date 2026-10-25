@@ -34,12 +34,38 @@ export class MeshStandardMaterialNode extends Node {
       dependencies: ["vec4"],
     };
   };
-
 }
 
+export class GLSLOutputNode extends Node {
+  name = "GLSLOutputNode";
+  inputs = {
+    colorNode: new Input({
+      name: "fragColor",
+      type: schema(z.any()),
+      defaultValue: () => vec4(0.2, 0.6, 1.0, 1.0),
+    }),
+    positionNode: new Input({
+      name: "positionOffset",
+      type: schema(z.any()),
+      defaultValue: () => positionLocal,
+    }),
+    normalNode: new Input({
+      name: "normal",
+      type: schema(z.any()),
+      defaultValue: () => normalLocal,
+    }),
+  };
 
-// console.log(positionWorld.toJSON(), "positionWorld", "JSONDATATEST");
-// console.log(positionLocal.toJSON(), "positionLocal", "JSONDATATEST");
-// console.log(vec4(1, 0, 0, 1).toJSON(), "vec4", "JSONDATATEST");
+  outputs = {};
 
-export const MaterialNodes = { MeshStandardMaterialNode };
+  public code = (args: string[]) => {
+    const argsString = !this.inputs.colorNode.connected ? `vec4(0.2, 0.6, 1.0, 1.0)` : args.join(", ");
+    return {
+      code: `return ${argsString}`,
+      dependencies: ["vec4"],
+    };
+  };
+}
+
+export const MaterialNodes = { MeshStandardMaterialNode, GLSLOutputNode };
+

@@ -5,7 +5,7 @@ import { NODE_WIDTH } from "../../constants";
 export const NODE_CONTENT_PADDING = 12;
 
 export const nodeWrapperStyles = (active: boolean, dragging: boolean) => css`
-  --node-background: var(--panel-background);
+  --node-background: #141722;
 
   position: absolute;
   display: flex;
@@ -14,17 +14,15 @@ export const nodeWrapperStyles = (active: boolean, dragging: boolean) => css`
   user-select: none;
   -webkit-user-select: none;
   z-index: ${active ? 9 : 0};
-  border-radius: 12px;
-  transition: box-shadow 0.15s;
+  border-radius: 8px;
+  border: 1px solid ${active ? "#1e62ff" : "#232738"};
+  transition: border-color 0.15s, box-shadow 0.15s;
   font-feature-settings: "ss02" 1;
-  box-shadow: 0 0px 20px rgba(0, 0, 0, 0.33);
-  cursor:  ${dragging ? "grabbing" : "default"};
+  background-color: #141722;
+  box-shadow: ${active ? "0 0 0 1px #1e62ff, 0 8px 24px rgba(0, 0, 0, 0.6)" : "0 4px 16px rgba(0, 0, 0, 0.45)"};
+  cursor: ${dragging ? "grabbing" : "default"};
   :focus {
     outline: none;
-  }
-
-  :active {
-    box-shadow: 0 0px 20px rgba(0, 0, 0, 0.53);
   }
 `;
 
@@ -33,25 +31,24 @@ export const nodeHeaderWrapperStyles = (active: boolean) => css`
   flex-direction: row;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 12px 12px;
-  font-size: var(--font-size-xxs);
-  font-weight: 500;
-  background-color: var(--node-background);
+  padding: 10px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  background-color: ${active ? "#1e2438" : "#1a1e2b"};
   line-height: 1;
-  color: ${active ? `var(--text-light-color)` : `var(--text-neutral-color)`};
-  border-top-left-radius: 12px;
-  border-top-right-radius: 12px;
-  border-bottom: 2px solid
-    ${active ? `var(--accent-color)` : `var(--border-color)`};
+  color: ${active ? "#ffffff" : "#cbd5e1"};
+  border-top-left-radius: 7px;
+  border-top-right-radius: 7px;
+  border-bottom: 1px solid ${active ? "#1e62ff" : "#232738"};
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.08em;
 `;
 
 export const nodeHeaderNameWrapperStyle = css`
   display: flex;
   flex-direction: row;
 
-  & > :first-child {
+  & > :first-of-type {
     margin-right: 8px;
     line-height: 0.6;
   }

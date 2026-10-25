@@ -1,7 +1,7 @@
 import { useCallback } from "react";
 import { Node } from "../../nodl-core";
 import { Vec3, Vec4, Vec2, Float, Int, Uint, Mat2, Mat3, Mat4, IVec2, IVec3, IVec4, UVec2, UVec3, UVec4, BVec2, BVec3, BVec4, Color } from "../../nodes/ConstantNodes";
-import { MeshStandardMaterialNode } from "../../nodes/MaterialNodes";
+import { MeshStandardMaterialNode, GLSLOutputNode } from "../../nodes/MaterialNodes";
 import { MeshStandardMaterialWindow } from "./MeshStandardMaterialWindow";
 import { VecWindow } from "./VecWindow";
 import { FloatUniform, TextureUniform, Vec2Uniform, Vec3Uniform } from "../../nodes/UniformNodes";
@@ -36,8 +36,8 @@ export const useNodeWindowResolver = () => {
         node instanceof BVec4
       ) {
         return <VecWindow node={node} />;
-      } else if (node instanceof MeshStandardMaterialNode) {
-        return <MeshStandardMaterialWindow node={node} />;
+      } else if (node instanceof MeshStandardMaterialNode || node instanceof GLSLOutputNode) {
+        return <MeshStandardMaterialWindow node={node as any} />;
       }
       else if (
         node instanceof Vec2Uniform ||

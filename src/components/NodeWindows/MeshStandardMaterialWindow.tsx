@@ -1,11 +1,15 @@
-import { useContext, useEffect, useRef } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import { MeshStandardMaterialNode } from "../../nodes/MaterialNodes";
 import { Experience } from "../Experience";
+import { WebGLPreview, PreviewGeometryType } from "../WebGLPreview";
 import { StoreContext } from "../../nodl-react";
 import { createVarNameForNode, EditorEventEmitter } from "../../nodes/utils";
 import { Fn } from "three/tsl";
 import { Pane } from "tweakpane";
-import { Input } from "../../nodl-core";
+import { Input, Node } from "../../nodl-core";
+import { shaderBackendManager, ShaderBackendType } from "../../backends/ShaderBackend";
+import { glslBackend } from "../../backends/GLSLBackend";
+import { tslBackend } from "../../backends/TSLBackend";
 
 type TreeNodeType = {
   node: Node;
@@ -21,78 +25,168 @@ export const MeshStandardMaterialWindow = ({
   node: MeshStandardMaterialNode;
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const { store } = useContext(StoreContext)
-  const experienceRef = useRef<Experience | null>(null);
+  const { store } = useContext(StoreContext);
 
+  const experienceRef = useRef<Experience | null>(null);
+  const webglPreviewRef = useRef<WebGLPreview | null>(null);
+
+  const [activeBackend, setActiveBackend] = useState<ShaderBackendType>(
+    shaderBackendManager.activeBackendType
+  );
+  const [selectedGeometry, setSelectedGeometry] = useState<PreviewGeometryType>("sphere");
+  const [glslError, setGlslError] = useState<string | null>(null);
+
+  // Sync with global backend state
+  useEffect(() => {
+    const unsub = EditorEventEmitter.on("backendChanged", ({ backend }) => {
+      setActiveBackend(backend);
+    });
+    return unsub;
+  }, []);
+
+  // Initialize and switch between WebGL2 preview and Three.js TSL experience
   useEffect(() => {
     if (!canvasRef.current) return;
-    const boundBox = canvasRef.current.getBoundingClientRect();
+    const canvas = canvasRef.current;
+    const boundBox = canvas.getBoundingClientRect();
 
-    experienceRef.current = new Experience(canvasRef.current, {
-      width: boundBox.width * (1 / store._editorTransformation.scale),
-      height: boundBox.height * (1 / store._editorTransformation.scale),
-    }, uiContainer.current || undefined);
+    if (activeBackend === "GLSL") {
+      // Clean up Three.js experience if running
+      if (experienceRef.current) {
+        experienceRef.current.dispose();
+        experienceRef.current = null;
+      }
 
-    const sizeObserver = new ResizeObserver(() => {
-      EditorEventEmitter.emit("updateConnectionUI", { connections: node.connections })
-    })
+      try {
+        const preview = new WebGLPreview(canvas);
+        preview.setGeometry(selectedGeometry);
+        preview.onCompileStatus = (status) => {
+          setGlslError(status.error || null);
+        };
+        webglPreviewRef.current = preview;
 
-    if (uiContainer.current) {
-      sizeObserver.observe(uiContainer.current)
+        // Perform initial compilation
+        const res = glslBackend.compile(store.nodes);
+        shaderBackendManager.setLastResult(res);
+        preview.updateShaders(res.vertexShader, res.fragmentShader, res.uniforms);
+      } catch (err: any) {
+        console.error("WebGL2 preview initialization notice:", err);
+      }
+    } else {
+      // Clean up WebGL2 preview if running
+      if (webglPreviewRef.current) {
+        webglPreviewRef.current.dispose();
+        webglPreviewRef.current = null;
+      }
+
+      try {
+        experienceRef.current = new Experience(
+          canvas,
+          {
+            width: boundBox.width * (1 / store._editorTransformation.scale),
+            height: boundBox.height * (1 / store._editorTransformation.scale),
+          },
+          uiContainer.current || undefined
+        );
+      } catch (err: any) {
+        console.error("TSL Experience initialization notice:", err);
+      }
     }
 
+    const compileGraph = () => {
+      if (activeBackend === "GLSL" && webglPreviewRef.current) {
+        const res = glslBackend.compile(store.nodes);
+        shaderBackendManager.setLastResult(res);
+        webglPreviewRef.current.updateShaders(res.vertexShader, res.fragmentShader, res.uniforms);
+      } else if (activeBackend === "TSL") {
+        const res = tslBackend.compile(store.nodes);
+        shaderBackendManager.setLastResult(res);
+        experienceRef.current?.render();
+      }
+    };
 
     const subs = EditorEventEmitter.on("selectionChanged", ({ nodes }) => {
       if (nodes?.includes(node)) {
-        experienceRef.current?.startRendering()
+        experienceRef.current?.startRendering();
       } else {
-        experienceRef.current?.stopRendering()
+        experienceRef.current?.stopRendering();
       }
-    })
+    });
 
     const forceRenderSubs = EditorEventEmitter.on("forceRender", () => {
-      experienceRef.current?.render()
-    })
+      compileGraph();
+    });
+
+    const changedSubs = EditorEventEmitter.on("changed", () => {
+      compileGraph();
+    });
 
     return () => {
       subs();
-      forceRenderSubs()
-      experienceRef.current?.dispose();
-      sizeObserver.disconnect()
-    }
-  }, []);
+      forceRenderSubs();
+      changedSubs();
+      if (experienceRef.current) {
+        experienceRef.current.dispose();
+        experienceRef.current = null;
+      }
+      if (webglPreviewRef.current) {
+        webglPreviewRef.current.dispose();
+        webglPreviewRef.current = null;
+      }
+    };
+  }, [activeBackend]);
 
+  // Handle geometry changes
+  const handleGeometryChange = (geom: PreviewGeometryType) => {
+    setSelectedGeometry(geom);
+    if (webglPreviewRef.current) {
+      webglPreviewRef.current.setGeometry(geom);
+    }
+  };
+
+  // Node inputs subscription for TSL mode
   useEffect(() => {
     const colorNodeSubs = node.inputs.colorNode?.subscribe((value) => {
-      const colorNode = Fn(value)
-      experienceRef.current?.updateNode("colorNode", colorNode);
+      if (activeBackend === "TSL") {
+        const colorNode = Fn(value);
+        experienceRef.current?.updateNode("colorNode", colorNode);
+      } else if (webglPreviewRef.current) {
+        const res = glslBackend.compile(store.nodes);
+        shaderBackendManager.setLastResult(res);
+        webglPreviewRef.current.updateShaders(res.vertexShader, res.fragmentShader, res.uniforms);
+      }
     });
 
     const positionNodeSubs = node.inputs.positionNode?.subscribe((value) => {
-      const positionNode = Fn(value)
-      experienceRef.current?.updateNode("positionNode", positionNode);
+      if (activeBackend === "TSL") {
+        const positionNode = Fn(value);
+        experienceRef.current?.updateNode("positionNode", positionNode);
+      }
     });
 
     const normalNodeSubs = node.inputs.normalNode?.subscribe((value) => {
-      const positionNode = Fn(value)
-      experienceRef.current?.updateNode("normalNode", positionNode);
+      if (activeBackend === "TSL") {
+        const positionNode = Fn(value);
+        experienceRef.current?.updateNode("normalNode", positionNode);
+      }
     });
 
     return () => {
-      colorNodeSubs.unsubscribe();
-      positionNodeSubs.unsubscribe();
-      normalNodeSubs.unsubscribe()
+      colorNodeSubs?.unsubscribe();
+      positionNodeSubs?.unsubscribe();
+      normalNodeSubs?.unsubscribe();
     };
-  }, []);
+  }, [activeBackend]);
 
   const btnContainer = useRef<HTMLDivElement>(null);
-  const uiContainer = useRef<HTMLDivElement>(null)
+  const uiContainer = useRef<HTMLDivElement>(null);
 
+  // Copy code button inside node
   useEffect(() => {
     if (!btnContainer.current) return;
     const pane = new Pane({ container: btnContainer.current, expanded: true });
     const btn = pane.addButton({
-      title: `Copy Code`,
+      title: activeBackend === "GLSL" ? `Copy GLSL ES 3.0` : `Copy TSL Code`,
     });
 
     let timeoutId: number;
@@ -100,132 +194,109 @@ export const MeshStandardMaterialWindow = ({
     btn.on("click", () => {
       timeoutId && clearTimeout(timeoutId);
       btn.title = "Copying...";
-      const nodesMap = new Map<string, Node>();
 
-      const outputToNodeMap = new Map<string, Node>();
-      const inputToNodeMap = new Map<string, Node>();
+      if (activeBackend === "GLSL") {
+        const res = glslBackend.compile(store.nodes);
+        navigator.clipboard.writeText(res.fragmentShader);
+        btn.title = "Copied GLSL!";
+      } else {
+        const res = tslBackend.compile(store.nodes);
+        navigator.clipboard.writeText(res.tslCode || "");
+        btn.title = "Copied TSL!";
+      }
 
-      const nodes = store.nodes;
-
-      nodes.forEach((node) => {
-        nodesMap.set(node.id, node);
-        Object.values(node.outputs).forEach((output) => {
-          outputToNodeMap.set(output.id, node);
-        });
-        Object.values(node.inputs).forEach((input) => {
-          inputToNodeMap.set(input.id, node);
-        });
-      });
-
-      const tree: TreeType = {
-        [node.id]: {
-          node,
-          parents: [],
-        },
-      };
-
-      const pushNodeToTree = (currentNode: Node, parentNode: TreeNodeType, traceInput?: string) => {
-        const currentInputs: Input[] = traceInput ? Object.keys(currentNode.inputs).filter(inputName => inputName === traceInput).map(name => currentNode.inputs[name]).filter(input => input !== null || input !== undefined) : Object.values(currentNode.inputs);
-
-        currentInputs.map((currentInput) => {
-          const connection = currentInput.connection;
-
-          if (!connection) return;
-
-          const output = connection.from;
-          const node = outputToNodeMap.get(output.id);
-          if (!node) return;
-          const leaf = {
-            node,
-            parents: [],
-          };
-          parentNode.parents = [...parentNode.parents, leaf];
-
-          pushNodeToTree(node, leaf);
-        });
-      };
-
-      pushNodeToTree(node, tree[node.id], "colorNode");
-
-      const traverseTree = (
-        rootNode: TreeNodeType,
-        cb: (child: TreeNodeType) => void
-      ) => {
-        cb(rootNode);
-        rootNode.parents.forEach((node) => {
-          traverseTree(node, cb);
-        });
-      };
-
-      const generatedCode: string[] = [];
-      const imports = new Set<string>();
-
-      traverseTree(tree[node.id], (child) => {
-        const node = child.node;
-
-        const inputs = Object.values(child.node.inputs);
-        const t = ["X", "Y", "Z", "W"];
-
-        let args: string[] = [];
-        for (let index = 0; index < inputs.length; index++) {
-          const input = inputs[index];
-          if (input.connection) {
-            const id = input.connection.from.id;
-            const node = outputToNodeMap.get(id);
-            if (node) {
-              const isSplitNode = node.name.includes("Split");
-              const varName = createVarNameForNode(node);
-              if (isSplitNode) {
-                if (!t[index]) throw new Error("not implemented");
-                args.push(`${varName}_${t[index]}`);
-              } else {
-                args.push(varName);
-              }
-            }
-          }
-        }
-        const code = node.code && node.code(args);
-        generatedCode.unshift(code.code.trim());
-        code.dependencies.forEach((importName) => {
-          imports.add(importName);
-        });
-      });
-
-      const importsString = Array.from(imports).join(", ");
-      const importStatement = `import { ${importsString}, Fn } from "three/tsl";`;
-      //remove duplicates
-      const uniqueStatements = [...new Set(generatedCode)].join("\n");
-      // const codeBlock = generatedCode.join("\n");
-      const fnString = `Fn(() => {
-          ${uniqueStatements}
-        })()`;
-
-      const code = `${importStatement}\n${fnString}`;
-
-      navigator.clipboard.writeText(code);
-      btn.title = "Copied to Clipboard";
       timeoutId = setTimeout(() => {
-        btn.title = "Copy Code";
+        btn.title = activeBackend === "GLSL" ? `Copy GLSL ES 3.0` : `Copy TSL Code`;
       }, 1000);
     });
+
     return () => {
       timeoutId && clearTimeout(timeoutId);
       pane.dispose();
     };
-  }, []);
+  }, [activeBackend]);
 
   return (
-    <>
+    <div style={{ position: "relative", minWidth: "280px" }}>
+      {/* Geometry Selector Toolbar for WebGL Preview */}
+      {activeBackend === "GLSL" && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "6px 8px",
+            backgroundColor: "#161822",
+            borderBottom: "1px solid #2a2f3e",
+            gap: "4px",
+          }}
+        >
+          <span style={{ fontSize: "11px", color: "#9ca3af", fontWeight: 500 }}>
+            Geometry:
+          </span>
+          <div style={{ display: "flex", gap: "3px" }}>
+            {(["sphere", "cube", "plane", "quad"] as PreviewGeometryType[]).map((geom) => (
+              <button
+                key={geom}
+                onClick={() => handleGeometryChange(geom)}
+                style={{
+                  padding: "3px 8px",
+                  fontSize: "11px",
+                  fontWeight: selectedGeometry === geom ? 600 : 400,
+                  backgroundColor: selectedGeometry === geom ? "#1e62ff" : "#242736",
+                  color: selectedGeometry === geom ? "#fff" : "#9ca3af",
+                  border: "1px solid",
+                  borderColor: selectedGeometry === geom ? "#1e62ff" : "#34384e",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                  textTransform: "capitalize",
+                  transition: "all 0.15s ease",
+                }}
+              >
+                {geom}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Compiler Error Overlay */}
+      {glslError && activeBackend === "GLSL" && (
+        <div
+          style={{
+            position: "absolute",
+            top: "40px",
+            left: "8px",
+            right: "8px",
+            zIndex: 10,
+            padding: "8px 10px",
+            backgroundColor: "rgba(239, 68, 68, 0.9)",
+            color: "#fff",
+            borderRadius: "4px",
+            fontSize: "11px",
+            lineHeight: "1.4",
+            pointerEvents: "none",
+            maxHeight: "100px",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {glslError}
+        </div>
+      )}
+
       <canvas
         ref={canvasRef}
         style={{
           width: "100%",
           height: "300px",
-          backgroundColor: "var(--node-background)",
+          backgroundColor: "#12141c",
+          display: "block",
+          cursor: "grab",
         }}
       />
       <div ref={uiContainer} />
       <div ref={btnContainer} />
-    </>
+    </div>
   );
 };

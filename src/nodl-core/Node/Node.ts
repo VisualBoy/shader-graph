@@ -121,20 +121,41 @@ export abstract class Node<TData extends NodeData = NodeData> {
       let type: InputValueSerialized["type"] = input.connection
         ? "CONNECTED"
         : "PRIMITIVE";
-      let value = input.connection
-        ? JSON.stringify({
-          fromId: input.connection.from.id,
-          fromName: input.connection?.from.name,
-        })
-        : input.getValue()();
 
-        
-      if (typeof value !== "string" && typeof value !== "number") {
+      let rawVal: any;
+      try {
+        const getter = input.getValue();
+        rawVal = typeof getter === "function" ? getter() : getter;
+      } catch {
+        rawVal = input.defaultValue;
+      }
+
+      let value: any;
+      if (input.connection) {
         try {
-          type = "NODE";
-          value = JSON.stringify(value.toJSON());
-        } catch (error) {
-          console.error("ERROR WHILE SERIALIZING NODE", error);
+          value = JSON.stringify({
+            fromId: input.connection.from.id,
+            fromName: input.connection?.from?.name,
+          });
+        } catch {
+          value = "";
+        }
+      } else {
+        if (typeof rawVal === "string" || typeof rawVal === "number" || typeof rawVal === "boolean") {
+          value = rawVal;
+        } else if (rawVal && typeof rawVal === "object") {
+          try {
+            if (typeof rawVal.toJSON === "function") {
+              type = "NODE";
+              value = JSON.stringify(rawVal.toJSON());
+            } else {
+              value = JSON.stringify(rawVal);
+            }
+          } catch {
+            value = "";
+          }
+        } else {
+          value = "";
         }
       }
 
